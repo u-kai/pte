@@ -3,7 +3,7 @@ use std::{
     str::{FromStr, Split},
 };
 
-pub(super) struct Line {
+pub struct Line {
     value: Split<'static, &'static str>,
 }
 impl Line {
@@ -23,7 +23,7 @@ impl Line {
     }
 }
 
-pub(super) struct Lines {
+pub struct Lines {
     inner: VecDeque<Line>,
 }
 impl Lines {
@@ -42,16 +42,16 @@ impl Lines {
     }
 }
 
-pub(super) trait AcceptArgument<T> {
+pub trait AcceptArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<T>;
 }
 
-pub(super) struct FromStrArgument<T: FromStr> {
+pub struct FromStrArgument<T: FromStr> {
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: FromStr> FromStrArgument<T> {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
         }
@@ -63,12 +63,12 @@ impl<T: FromStr> AcceptArgument<T> for FromStrArgument<T> {
     }
 }
 
-pub(super) struct VecArgument<T: FromStr> {
+pub struct VecArgument<T: FromStr> {
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: FromStr> VecArgument<T> {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
         }
@@ -80,7 +80,7 @@ struct TwoDVecArgument<T: FromStr> {
 }
 
 impl<T: FromStr> TwoDVecArgument<T> {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
         }
