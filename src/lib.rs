@@ -132,7 +132,11 @@ impl<T: FromStr> AcceptArgument<Vec<Vec<T>>> for TwoDVecArgument<T> {
         }
         let mut result = Vec::new();
         while let Some(line) = lines.next_line() {
-            result.push(line.to_vec());
+            let v = line.to_vec();
+            if v.is_empty() {
+                continue;
+            }
+            result.push(v);
         }
         Some(result)
     }
@@ -148,6 +152,20 @@ impl<T: FromStr> AcceptArgument<Vec<T>> for VecArgument<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn isize_isize_two_d_vec() {
+        let s = "1 2\n345 67 8\n9 10";
+        let mut lines = Lines::new(s);
+        let num_arg = FromStrArgument::<isize>::new();
+        let two_d_vec_arg = TwoDVecArgument::<isize>::new();
+
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 1);
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 2);
+        let vec = two_d_vec_arg.consume(&mut lines);
+        assert_eq!(vec.unwrap(), vec![vec![345, 67, 8], vec![9, 10]]);
+    }
     #[test]
     fn line_next_data() {
         let s = "1 2 345 67 8";
