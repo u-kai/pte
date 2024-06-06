@@ -1,97 +1,133 @@
-// This is a library crate
-#[macro_export]
-macro_rules! atcoder_exe {
-    ($fn:ident($($var:ident),*)) => {
-       fn main() {
-           parse_stdin!($($var),*);
-           let result = $fn($($var),*);
-           println!("{}", result);
-       }
-    };
+extern crate proc_macro;
+
+use std::{
+    collections::VecDeque,
+    fmt::Debug,
+    str::{FromStr, Split},
+};
+
+use proc_macro::TokenStream;
+use quote::{quote, ToTokens};
+use syn::{
+    parse::{ParseStream, Parser},
+    parse_macro_input, Error, Ident, ItemFn, Type,
+};
+
+//struct Linej
+//impl Line {
+//    fn new(s: impl Into<String>,sep: char) -> Self {
+//        Line{
+//            inner: s.into(),
+//            sep,
+//        }
+//    }
+//    fn split_by(&self) -> impl Iterator<Item = &str> {
+//        self.inner.split(self.sep)
+//    }
+//    fn to_vec<E: Debug, T: FromStr<Err = E>>(&self, sep: char) -> Vec<T> {
+//        self.split_by()
+//            .into_iter()
+//            .map(|s| s.parse::<T>().unwrap())
+//            .collect()
+//    }
+//    fn consume<E: Debug, T: FromStr<Err = E>>(&mut self)
+//}
+
+//trait Lines {
+//    fn next(&mut self) -> Option<Line>;
+//}
+//
+//
+//
+//
+
+struct Line {
+    value: Split<'static, &'static str>,
 }
-#[macro_export]
-macro_rules! parse_stdin {
-    // type suggestion
-    ($($input:ident),*) => {
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let mut iter = input.trim().split_whitespace();
-        vars_expanded!(iter, $($input),*);
-    };
-    // variables have different types
-    ({$($input:ident: $t:ty),*}) => {
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let mut iter = input.trim().split_whitespace();
-        vars_expanded!(iter, {$($input: $t),*});
-    };
-    // all variables are same type
-    ($($input:ident),*,<$t:ty>) => {
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let mut iter = input.trim().split_whitespace();
-        vars_expanded!(iter, {$($input),*}, <$t>);
-    };
+impl Line {
+    fn new(value: &'static str) -> Self {
+        Line {
+            value: value.split(" "),
+        }
+    }
+    fn next_data(&mut self) -> Option<&str> {
+        self.value.next()
+    }
 }
 
-#[macro_export]
-macro_rules! vars_expanded {
-    // type suggestion
-    ($iter:ident,$($input:ident),*) => {
-        $(
-            let $input = $iter.next().unwrap().parse().unwrap();
-        )*
-    };
-    // variables have different types
-    ($iter:ident,{$($input:ident: $t:ty),*}) => {
-        $(
-            let $input = $iter.next().unwrap().parse::<$t>().unwrap();
-        )*
-    };
-    // all variables are same type
-    ($iter:ident,{$($input:ident),*},<$t:ty>) => {
-        $(
-            let $input = $iter.next().unwrap().parse::<$t>().unwrap();
-        )*
-    };
+struct Lines {
+    inner: VecDeque<Line>,
+}
+impl Lines {
+    fn new(s: &'static str) -> Self {
+        let inner = s.split("\n").map(|s| Line::new(s)).collect();
+        Lines { inner }
+    }
+    fn next_line(&mut self) -> Option<Line> {
+        self.inner.pop_front()
+    }
+    fn next_data(&mut self) -> Option<&str> {
+        self.inner.get_mut(0).and_then(|line| line.next_data())
+    }
+}
+
+trait AcceptArgument<T> {
+    fn consume(&self, lines: &mut Lines) -> Option<T>;
+}
+
+struct NumberArgument<T: std::ops::Add> {
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: std::ops::Add> NumberArgument<T> {
+    fn new() -> Self {
+        NumberArgument {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+impl<T: std::ops::Add + FromStr> AcceptArgument<T> for NumberArgument<T> {
+    fn consume(&self, lines: &mut Lines) -> Option<T> {
+        lines.next_data().and_then(|s| s.parse().ok())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
-    fn type_suggest() {
-        let mut iter = vec!["1", "2", "3"].into_iter();
-        fn assert_isize(a: isize, b: isize) {
-            assert_eq!(a, b);
-        }
-        fn assert_string(a: String, b: String) {
-            assert_eq!(a, b);
-        }
-        vars_expanded!(iter, a, b, c);
-        assert_isize(a, 1);
-        assert_isize(b, 2);
-        assert_isize(c, 3);
-
-        let mut iter = vec!["1", "2", "3"].into_iter();
-        vars_expanded!(iter, a, b, c);
-        assert_isize(a, 1);
-        assert_isize(b, 2);
-        assert_string(c, "3".to_string());
+    fn line_next_data() {
+        let s = "1 2 3";
+        let mut focus = Line::new(s);
+        let data = focus.next_data();
+        assert_eq!(data.unwrap(), "1");
+        let data = focus.next_data();
+        assert_eq!(data.unwrap(), "2");
+        let data = focus.next_data();
+        assert_eq!(data.unwrap(), "3");
+        let data = focus.next_data();
+        assert_eq!(data, None);
     }
     #[test]
-    fn all_same_type() {
-        let mut iter = vec!["1", "2", "3"].into_iter();
-        vars_expanded!(iter, {a, b, c}, <String>);
-        assert_eq!(a, "1");
-        assert_eq!(b, "2");
-        assert_eq!(c, "3");
+    fn consume_line_number() {
+        let s = "1 2 3";
+        let mut lines = Lines::new(s);
+        let num_arg = NumberArgument::<isize>::new();
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 1);
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 2);
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 3);
     }
-    #[test]
-    fn different_types() {
-        let mut iter = vec!["1", "2", "Hello"].into_iter();
-        vars_expanded!(iter, {a:isize, b:isize, c:String});
-        assert_eq!(a, 1);
-        assert_eq!(b, 2);
-        assert_eq!(c, "Hello");
-    }
+    //#[test]
+    //fn line_all_isize() {
+    //    let s = "1 2 3";
+    //    fn assert_isize(a: isize, b: isize, c: isize) {
+    //        assert_eq!(a, 1);
+    //        assert_eq!(b, 2);
+    //        assert_eq!(c, 3);
+    //    }
+    //    parse_lines!(s, assert_isize);
+    //}
 }
