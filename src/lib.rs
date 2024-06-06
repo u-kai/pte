@@ -75,29 +75,13 @@ impl Lines {
     fn next_data(&mut self) -> Option<&str> {
         self.inner.get_mut(0).and_then(|line| line.next_data())
     }
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
 }
 
 trait AcceptArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<T>;
-}
-
-struct VecArgument<T: FromStr> {
-    _phantom: std::marker::PhantomData<T>,
-}
-
-impl<T: FromStr> VecArgument<T> {
-    fn new() -> Self {
-        Self {
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T: FromStr> AcceptArgument<Vec<T>> for VecArgument<T> {
-    fn consume(&self, lines: &mut Lines) -> Option<Vec<T>> {
-        let line = lines.next_line()?;
-        Some(line.to_vec())
-    }
 }
 
 struct FromStrArgument<T: FromStr> {
@@ -114,6 +98,50 @@ impl<T: FromStr> FromStrArgument<T> {
 impl<T: FromStr> AcceptArgument<T> for FromStrArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<T> {
         lines.next_data().and_then(|s| s.parse().ok())
+    }
+}
+
+struct VecArgument<T: FromStr> {
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: FromStr> VecArgument<T> {
+    fn new() -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+struct TwoDVecArgument<T: FromStr> {
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: FromStr> TwoDVecArgument<T> {
+    fn new() -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: FromStr> AcceptArgument<Vec<Vec<T>>> for TwoDVecArgument<T> {
+    fn consume(&self, lines: &mut Lines) -> Option<Vec<Vec<T>>> {
+        if lines.is_empty() {
+            return None;
+        }
+        let mut result = Vec::new();
+        while let Some(line) = lines.next_line() {
+            result.push(line.to_vec());
+        }
+        Some(result)
+    }
+}
+
+impl<T: FromStr> AcceptArgument<Vec<T>> for VecArgument<T> {
+    fn consume(&self, lines: &mut Lines) -> Option<Vec<T>> {
+        let line = lines.next_line()?;
+        Some(line.to_vec())
     }
 }
 
@@ -172,6 +200,16 @@ mod tests {
         let vec_arg = VecArgument::<isize>::new();
         let vec = vec_arg.consume(&mut lines);
         assert_eq!(vec.unwrap(), vec![1, 2, 3]);
+        let vec = vec_arg.consume(&mut lines);
+        assert_eq!(vec, None);
+    }
+    #[test]
+    fn consume_two_d_vec_number() {
+        let s = "1 2 3\n4 5 6";
+        let mut lines = Lines::new(s);
+        let vec_arg = TwoDVecArgument::<isize>::new();
+        let vec = vec_arg.consume(&mut lines);
+        assert_eq!(vec.unwrap(), vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let vec = vec_arg.consume(&mut lines);
         assert_eq!(vec, None);
     }
