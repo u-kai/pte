@@ -53,6 +53,12 @@ impl Line {
     fn next_data(&mut self) -> Option<&str> {
         self.value.next()
     }
+    fn to_vec<T: FromStr>(self) -> Vec<T> {
+        self.value
+            .into_iter()
+            .filter_map(|s| s.parse::<T>().ok())
+            .collect()
+    }
 }
 
 struct Lines {
@@ -73,6 +79,25 @@ impl Lines {
 
 trait AcceptArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<T>;
+}
+
+struct VecArgument<T: FromStr> {
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: FromStr> VecArgument<T> {
+    fn new() -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: FromStr> AcceptArgument<Vec<T>> for VecArgument<T> {
+    fn consume(&self, lines: &mut Lines) -> Option<Vec<T>> {
+        let line = lines.next_line()?;
+        Some(line.to_vec())
+    }
 }
 
 struct FromStrArgument<T: FromStr> {
@@ -125,7 +150,10 @@ mod tests {
         assert_eq!(num.unwrap(), 3);
         let num = num_arg.consume(&mut lines);
         assert_eq!(num, None);
-
+    }
+    #[test]
+    fn consume_line_string() {
+        let s = "1 2 3";
         let mut lines = Lines::new(s);
         let str_arg = FromStrArgument::<String>::new();
         let str = str_arg.consume(&mut lines);
@@ -136,6 +164,16 @@ mod tests {
         assert_eq!(str.unwrap(), "3");
         let str = str_arg.consume(&mut lines);
         assert_eq!(str, None);
+    }
+    #[test]
+    fn consume_vec_number() {
+        let s = "1 2 3";
+        let mut lines = Lines::new(s);
+        let vec_arg = VecArgument::<isize>::new();
+        let vec = vec_arg.consume(&mut lines);
+        assert_eq!(vec.unwrap(), vec![1, 2, 3]);
+        let vec = vec_arg.consume(&mut lines);
+        assert_eq!(vec, None);
     }
     //#[test]
     //fn line_all_isize() {
