@@ -75,18 +75,18 @@ trait AcceptArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<T>;
 }
 
-struct NumberArgument<T: std::ops::Add> {
+struct FromStrArgument<T: FromStr> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: std::ops::Add> NumberArgument<T> {
+impl<T: FromStr> FromStrArgument<T> {
     fn new() -> Self {
-        NumberArgument {
+        Self {
             _phantom: std::marker::PhantomData,
         }
     }
 }
-impl<T: std::ops::Add + FromStr> AcceptArgument<T> for NumberArgument<T> {
+impl<T: FromStr> AcceptArgument<T> for FromStrArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<T> {
         lines.next_data().and_then(|s| s.parse().ok())
     }
@@ -97,14 +97,18 @@ mod tests {
     use super::*;
     #[test]
     fn line_next_data() {
-        let s = "1 2 3";
+        let s = "1 2 345 67 8";
         let mut focus = Line::new(s);
         let data = focus.next_data();
         assert_eq!(data.unwrap(), "1");
         let data = focus.next_data();
         assert_eq!(data.unwrap(), "2");
         let data = focus.next_data();
-        assert_eq!(data.unwrap(), "3");
+        assert_eq!(data.unwrap(), "345");
+        let data = focus.next_data();
+        assert_eq!(data.unwrap(), "67");
+        let data = focus.next_data();
+        assert_eq!(data.unwrap(), "8");
         let data = focus.next_data();
         assert_eq!(data, None);
     }
@@ -112,13 +116,26 @@ mod tests {
     fn consume_line_number() {
         let s = "1 2 3";
         let mut lines = Lines::new(s);
-        let num_arg = NumberArgument::<isize>::new();
+        let num_arg = FromStrArgument::<isize>::new();
         let num = num_arg.consume(&mut lines);
         assert_eq!(num.unwrap(), 1);
         let num = num_arg.consume(&mut lines);
         assert_eq!(num.unwrap(), 2);
         let num = num_arg.consume(&mut lines);
         assert_eq!(num.unwrap(), 3);
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num, None);
+
+        let mut lines = Lines::new(s);
+        let str_arg = FromStrArgument::<String>::new();
+        let str = str_arg.consume(&mut lines);
+        assert_eq!(str.unwrap(), "1");
+        let str = str_arg.consume(&mut lines);
+        assert_eq!(str.unwrap(), "2");
+        let str = str_arg.consume(&mut lines);
+        assert_eq!(str.unwrap(), "3");
+        let str = str_arg.consume(&mut lines);
+        assert_eq!(str, None);
     }
     //#[test]
     //fn line_all_isize() {
