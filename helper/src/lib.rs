@@ -77,7 +77,7 @@ impl<T: FromStr> VecArgument<T> {
     }
 }
 
-struct TwoDVecArgument<T: FromStr> {
+pub struct TwoDVecArgument<T: FromStr> {
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -108,14 +108,41 @@ impl<T: FromStr> AcceptArgument<Vec<Vec<T>>> for TwoDVecArgument<T> {
 
 impl<T: FromStr> AcceptArgument<Vec<T>> for VecArgument<T> {
     fn consume(&self, lines: &mut Lines) -> Option<Vec<T>> {
-        let line = lines.next_line()?;
-        Some(line.to_vec())
+        // empty line is skipped
+        if lines.is_empty() {
+            return None;
+        }
+        while let Some(line) = lines.next_line() {
+            let v = line.to_vec();
+            // empty line is skipped
+            if !v.is_empty() {
+                return Some(v);
+            }
+        }
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn isize_isize_vec_two_d_vec() {
+        let s = "1 2\n345 67 8\n9 10\n11 12";
+        let mut lines = Lines::new(s);
+        let num_arg = FromStrArgument::<isize>::new();
+        let vec_arg = VecArgument::<isize>::new();
+        let two_d_vec_arg = TwoDVecArgument::<isize>::new();
+
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 1);
+        let num = num_arg.consume(&mut lines);
+        assert_eq!(num.unwrap(), 2);
+        let vec = vec_arg.consume(&mut lines);
+        assert_eq!(vec.unwrap(), vec![345, 67, 8]);
+        let vec = two_d_vec_arg.consume(&mut lines);
+        assert_eq!(vec.unwrap(), vec![vec![9, 10], vec![11, 12]]);
+    }
     #[test]
     fn isize_isize_two_d_vec() {
         let s = "1 2\n345 67 8\n9 10";

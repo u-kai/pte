@@ -13,6 +13,8 @@ pub fn atcorder_exe(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
         fn main() {
             use core::{
                 FromStrArgument,
+                VecArgument,
+                TwoDVecArgument,
                 AcceptArgument,
                 Lines,
                 parse_lines,
