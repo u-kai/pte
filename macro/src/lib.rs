@@ -7,16 +7,23 @@ use syn::{
     Ident, Type,
 };
 
-#[proc_macro]
-pub fn atcorder_exe(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let item: proc_macro2::TokenStream = item.into();
+#[proc_macro_attribute]
+pub fn atcorder_exe(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let attr = attr.to_string();
+    if attr == "main" {
+        atcorder_exe_main(item.into()).into()
+    } else {
+        panic!("unknown attribute: {}", attr);
+    }
+}
+
+fn atcorder_exe_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     quote! {
         fn main() {
-            use core::{
-                FromStrArgument,
-                VecArgument,
-                TwoDVecArgument,
-                AcceptArgument,
+            use pte::{
                 Lines,
                 parse_lines,
             };
@@ -57,18 +64,15 @@ fn parse_lines_impl(
             if is_vec(ty) {
                 let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
                 return quote! {
-                    let arg = TwoDVecArgument::<#ty>::new();
-                    let #name = arg.consume(&mut #lines_ident).unwrap();
+                    let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
                 };
             }
             return quote! {
-                let arg = VecArgument::<#ty>::new();
-                let #name = arg.consume(&mut #lines_ident).unwrap();
+                let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
             };
         }
         quote! {
-            let arg = FromStrArgument::<#ty>::new();
-            let #name = arg.consume(&mut #lines_ident).unwrap();
+            let #name = #lines_ident.consume::<#ty>().unwrap();
         }
     });
     let fn_sig_declare = fn_sig.to_declare_token_stream();
@@ -81,6 +85,7 @@ fn parse_lines_impl(
         #fn_sig_execute
     }
 }
+
 fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
     let Type::Path(path) = ty else {
         return Err(syn::Error::new(ty.span(), "expected path"));
@@ -172,17 +177,6 @@ fn is_vec(ty: &Type) -> bool {
     false
 }
 
-fn is_isize(ty: &Type) -> bool {
-    if let Type::Path(path) = ty {
-        if let Some(segment) = path.path.segments.first() {
-            if segment.ident == "isize" {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,8 +193,7 @@ mod tests {
         let expected = quote! {
             fn assert_isize(two_d: Vec<Vec<isize> >) {
             }
-            let arg = TwoDVecArgument::<isize>::new();
-            let two_d = arg.consume(&mut lines).unwrap();
+            let two_d = lines.consume_to_two_d_vec::<isize>().unwrap();
             assert_isize(two_d);
         };
         assert_eq!(token.to_string(), expected.to_string());
@@ -226,14 +219,10 @@ mod tests {
                 assert_eq!(c, 3);
                 assert_eq!(v, vec![1, 2, 3]);
             }
-            let arg = FromStrArgument::<isize>::new();
-            let a = arg.consume(&mut lines).unwrap();
-            let arg = FromStrArgument::<isize>::new();
-            let b = arg.consume(&mut lines).unwrap();
-            let arg = FromStrArgument::<isize>::new();
-            let c = arg.consume(&mut lines).unwrap();
-            let arg = VecArgument::<isize>::new();
-            let v = arg.consume(&mut lines).unwrap();
+            let a = lines.consume::<isize>().unwrap();
+            let b = lines.consume::<isize>().unwrap();
+            let c = lines.consume::<isize>().unwrap();
+            let v = lines.consume_to_vec::<isize>().unwrap();
             assert_isize(a, b, c,v);
         };
         assert_eq!(token.to_string(), expected.to_string());
@@ -257,12 +246,9 @@ mod tests {
                 assert_eq!(b, 2);
                 assert_eq!(c, 3);
             }
-            let arg = FromStrArgument::<isize>::new();
-            let a = arg.consume(&mut lines).unwrap();
-            let arg = FromStrArgument::<isize>::new();
-            let b = arg.consume(&mut lines).unwrap();
-            let arg = FromStrArgument::<isize>::new();
-            let c = arg.consume(&mut lines).unwrap();
+            let a = lines.consume::<isize>().unwrap();
+            let b = lines.consume::<isize>().unwrap();
+            let c = lines.consume::<isize>().unwrap();
             assert_isize(a, b, c);
         };
         assert_eq!(token.to_string(), expected.to_string());
