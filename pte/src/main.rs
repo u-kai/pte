@@ -1,6 +1,6 @@
-use pte::atcorder_exe;
+use pte::pte;
 
-#[atcorder_exe(main)]
-fn solve(a: String) {
-    println!("{}", a);
+#[pte(main)]
+fn solve(a: i32, b: i32) -> i32 {
+    a + b
 }

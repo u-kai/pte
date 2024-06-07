@@ -11,26 +11,26 @@ fn dependencies() -> proc_macro2::TokenStream {
     quote! {
         use pte::{
             Lines,
-            parse_lines,
+            parse_lines_and_println,
         };
     }
 }
 
 #[proc_macro_attribute]
-pub fn atcorder_exe(
+pub fn pte(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    atcorder_exe_impl(attr.into(), item.into()).into()
+    pte_impl(attr.into(), item.into()).into()
 }
 
-fn atcorder_exe_impl(
+fn pte_impl(
     attr: proc_macro2::TokenStream,
     item: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let attr_str = attr.to_string();
     if attr_str == "main" {
-        atcorder_exe_main(item.into())
+        pte_main(item.into())
     } else {
         let lit_str = parse_lit.parse2(attr).unwrap();
         let dependencies = dependencies();
@@ -43,7 +43,7 @@ fn atcorder_exe_impl(
     }
 }
 
-fn atcorder_exe_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn pte_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let dependencies = dependencies();
     quote! {
         #dependencies
@@ -55,7 +55,7 @@ fn atcorder_exe_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream
                 result = std::io::stdin().read_line(&mut i).unwrap();
             }
             let mut lines = Lines::new(&i);
-            #[parse_lines(lines)]
+            #[parse_lines_and_println(lines)]
             #item
         }
     }
@@ -63,11 +63,11 @@ fn atcorder_exe_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream
 }
 
 #[proc_macro_attribute]
-pub fn parse_lines(
+pub fn parse_lines_and_println(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    parse_lines_impl(attr.into(), item.into()).into()
+    parse_lines_and_println_impl(attr.into(), item.into()).into()
 }
 
 fn parse_attr(attr: ParseStream) -> syn::Result<Ident> {
@@ -77,37 +77,22 @@ fn parse_lit(attr: ParseStream) -> syn::Result<syn::Lit> {
     attr.parse()
 }
 
-fn parse_lines_impl(
+fn parse_lines_and_println_impl(
     lines: proc_macro2::TokenStream,
     item: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let lines_ident = parse_attr.parse2(lines).unwrap();
     let fn_sig = fn_parse.parse2(item).unwrap();
-    let consume_lines = fn_sig.args.iter().map(|(name, ty)| {
-        if is_vec(ty) {
-            let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
-            if is_vec(ty) {
-                let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
-                return quote! {
-                    let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
-                };
-            }
-            return quote! {
-                let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
-            };
-        }
-        quote! {
-            let #name = #lines_ident.consume::<#ty>().unwrap();
-        }
-    });
+    let consume_lines = fn_sig.to_consume_lines_token_stream(lines_ident);
     let fn_sig_declare = fn_sig.to_declare_token_stream();
     let fn_sig_execute = fn_sig.to_execute_token_stream();
     quote! {
         #fn_sig_declare
 
-        #(#consume_lines)*
+        #consume_lines
 
-        #fn_sig_execute
+        let result = #fn_sig_execute
+        println!("{}", result);
     }
 }
 
@@ -130,6 +115,7 @@ fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
 struct FunctionSignature {
     name: Ident,
     args: Vec<(Ident, Type)>,
+    return_type: proc_macro2::TokenStream,
     body: syn::Block,
 }
 
@@ -148,9 +134,32 @@ impl FunctionSignature {
         let args = self.args.iter().map(|(name, ty)| {
             quote! { #name: #ty }
         });
+        let ty = &self.return_type;
         let body = &self.body;
         quote! {
-            fn #name(#(#args),*) #body
+            fn #name(#(#args),*) #ty #body
+        }
+    }
+    fn to_consume_lines_token_stream(&self, lines_ident: Ident) -> proc_macro2::TokenStream {
+        let result = self.args.iter().map(|(name, ty)| {
+            if is_vec(ty) {
+                let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
+                if is_vec(ty) {
+                    let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
+                    return quote! {
+                        let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
+                    };
+                }
+                return quote! {
+                    let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
+                };
+            }
+            quote! {
+                let #name = #lines_ident.consume::<#ty>().unwrap();
+            }
+        });
+        quote! {
+            #(#result)*
         }
     }
 }
@@ -174,10 +183,15 @@ impl Parse for FunctionSignature {
             })?
             .into_iter()
             .collect();
-        if input.peek(syn::Token![->]) {
+
+        let return_type = if input.peek(syn::Token![->]) {
             let _arrow: syn::Token![->] = input.parse()?;
-            let _ty: Type = input.parse()?;
-        }
+            let return_type: Type = input.parse()?;
+            quote! { -> #return_type }
+        } else {
+            quote! {}
+        };
+
         let body: syn::Block = input.parse().map_err(|e| {
             syn::Error::new(
                 e.span(),
@@ -187,7 +201,13 @@ impl Parse for FunctionSignature {
                 ),
             )
         })?;
-        Ok(Self { name, args, body })
+
+        Ok(Self {
+            name,
+            args,
+            return_type,
+            body,
+        })
     }
 }
 
@@ -208,7 +228,7 @@ mod tests {
     #[test]
     fn parse_two_d_vec_lines() {
         // expect expand assert_isize(1, 2, 3);
-        let token = parse_lines_impl(
+        let token = parse_lines_and_println_impl(
             quote! { lines },
             quote! {
                 fn assert_isize(two_d: Vec<Vec<isize>>) {
@@ -219,14 +239,15 @@ mod tests {
             fn assert_isize(two_d: Vec<Vec<isize> >) {
             }
             let two_d = lines.consume_to_two_d_vec::<isize>().unwrap();
-            assert_isize(two_d);
+            let result = assert_isize(two_d);
+            println!("{}", result);
         };
         assert_eq!(token.to_string(), expected.to_string());
     }
     #[test]
     fn parse_num_and_vec_lines() {
         // expect expand assert_isize(1, 2, 3);
-        let token = parse_lines_impl(
+        let token = parse_lines_and_println_impl(
             quote! { lines },
             quote! {
                 fn assert_isize(a: isize, b: isize, c: isize,v: Vec<isize>) {
@@ -248,33 +269,31 @@ mod tests {
             let b = lines.consume::<isize>().unwrap();
             let c = lines.consume::<isize>().unwrap();
             let v = lines.consume_to_vec::<isize>().unwrap();
-            assert_isize(a, b, c,v);
+            let result = assert_isize(a, b, c,v);
+            println!("{}", result);
         };
         assert_eq!(token.to_string(), expected.to_string());
     }
     #[test]
     fn parse_num_line() {
         // expect expand assert_isize(1, 2, 3);
-        let token = parse_lines_impl(
+        let token = parse_lines_and_println_impl(
             quote! { lines },
             quote! {
-                fn assert_isize(a: isize, b: isize, c: isize) {
-                    assert_eq!(a, 1);
-                    assert_eq!(b, 2);
-                    assert_eq!(c, 3);
+                fn add(a: isize, b: isize, c: isize) -> isize {
+                    a + b + c
                 }
             },
         );
         let expected = quote! {
-            fn assert_isize(a: isize, b: isize, c: isize) {
-                assert_eq!(a, 1);
-                assert_eq!(b, 2);
-                assert_eq!(c, 3);
+            fn add(a: isize, b: isize, c: isize) -> isize {
+                a + b + c
             }
             let a = lines.consume::<isize>().unwrap();
             let b = lines.consume::<isize>().unwrap();
             let c = lines.consume::<isize>().unwrap();
-            assert_isize(a, b, c);
+            let result = add(a, b, c);
+            println!("{}", result);
         };
         assert_eq!(token.to_string(), expected.to_string());
     }
