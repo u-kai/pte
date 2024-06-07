@@ -29,11 +29,20 @@ fn pte_impl(
     item: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let attr_str = attr.to_string();
+    if attr_str == "" {
+        return pte_main(item.into());
+    }
+    let dependencies = dependencies();
     if attr_str == "main" {
-        pte_main(item.into())
+        let read_stdin = read_stdin();
+        quote! {
+            #dependencies
+            #read_stdin
+            #[parse_lines_and_println(lines)]
+            #item
+        }
     } else {
         let lit_str = parse_lit.parse2(attr).unwrap();
-        let dependencies = dependencies();
         quote! {
             #dependencies
             let mut lines = Lines::new(#lit_str);
@@ -43,18 +52,25 @@ fn pte_impl(
     }
 }
 
+fn read_stdin() -> proc_macro2::TokenStream {
+    quote! {
+        let mut i = String::new();
+        let mut result = std::io::stdin().read_line(&mut i).unwrap();
+        while result > 1 {
+            result = std::io::stdin().read_line(&mut i).unwrap();
+        }
+        let mut lines = Lines::new(&i);
+    }
+}
+
 fn pte_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let dependencies = dependencies();
+    let read_stdin = read_stdin();
     quote! {
         #dependencies
 
         fn main() {
-            let mut i = String::new();
-            let mut result = std::io::stdin().read_line(&mut i).unwrap();
-            while result > 1 {
-                result = std::io::stdin().read_line(&mut i).unwrap();
-            }
-            let mut lines = Lines::new(&i);
+            #read_stdin
             #[parse_lines_and_println(lines)]
             #item
         }

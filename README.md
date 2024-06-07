@@ -19,16 +19,27 @@ fn solve(a: i32, b: i32) -> i32 {
 }
 ```
 
-1. Use the `pte` macro and pass the function name and arguments.
+1. Use the `pte` macro and define the function you want to use.
 
 ```rust
-// Arguments names (like a and b) are free to choose, but ther must be different from each other.
 use pte::pte;
-#[pte(main)]
+#[pte]
 fn solve(a: i32, b: i32) -> i32 {
     a + b
 }
 ```
+
+1. Run the code and you will be prompted to enter the input.
+
+```shell
+$ cargo run
+1 2
+
+3
+```
+
+- The input is `1 2` and next line appears to enter the input.
+- The output is `3` which is the result of `1 + 2`.
 
 ## OLD
 
