@@ -3,6 +3,7 @@ extern crate proc_macro;
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream, Parser},
+    spanned::Spanned,
     Ident, Type,
 };
 
@@ -51,47 +52,23 @@ fn parse_lines_impl(
     let lines_ident = parse_attr.parse2(lines).unwrap();
     let fn_sig = fn_parse.parse2(item).unwrap();
     let consume_lines = fn_sig.args.iter().map(|(name, ty)| {
-        if is_isize(ty) {
-            quote! {
-                let arg = FromStrArgument::<isize>::new();
-                let #name = arg.consume(&mut #lines_ident).unwrap();
-            }
-        } else if is_vec(ty) {
-            fn get_vec_type(ty: &Type) -> &Type {
-                if let Type::Path(path) = ty {
-                    if let Some(segment) = path.path.segments.first() {
-                        if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                            if let syn::GenericArgument::Type(ty) = args.args.first().unwrap() {
-                                ty
-                            } else {
-                                todo!();
-                            }
-                        } else {
-                            todo!();
-                        }
-                    } else {
-                        todo!();
-                    }
-                } else {
-                    todo!();
-                }
-            }
-
-            let ty = get_vec_type(ty);
+        if is_vec(ty) {
+            let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
             if is_vec(ty) {
-                let ty = get_vec_type(ty);
-                quote! {
+                let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
+                return quote! {
                     let arg = TwoDVecArgument::<#ty>::new();
                     let #name = arg.consume(&mut #lines_ident).unwrap();
-                }
-            } else {
-                quote! {
-                    let arg = VecArgument::<#ty>::new();
-                    let #name = arg.consume(&mut #lines_ident).unwrap();
-                }
+                };
             }
-        } else {
-            todo!();
+            return quote! {
+                let arg = VecArgument::<#ty>::new();
+                let #name = arg.consume(&mut #lines_ident).unwrap();
+            };
+        }
+        quote! {
+            let arg = FromStrArgument::<#ty>::new();
+            let #name = arg.consume(&mut #lines_ident).unwrap();
         }
     });
     let fn_sig_declare = fn_sig.to_declare_token_stream();
@@ -103,6 +80,21 @@ fn parse_lines_impl(
 
         #fn_sig_execute
     }
+}
+fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
+    let Type::Path(path) = ty else {
+        return Err(syn::Error::new(ty.span(), "expected path"));
+    };
+    let Some(segment) = path.path.segments.first() else {
+        return Err(syn::Error::new(ty.span(), "expected segment"));
+    };
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
+    };
+    let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
+        return Err(syn::Error::new(ty.span(), "expected type"));
+    };
+    Ok(ty)
 }
 
 struct FunctionSignature {
