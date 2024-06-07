@@ -54,6 +54,28 @@ fn parse_lines_impl(
                 let arg = FromStrArgument::<isize>::new();
                 let #name = arg.consume(&mut #lines_ident).unwrap();
             }
+        } else if is_vec(ty) {
+            let ty = if let Type::Path(path) = ty {
+                if let Some(segment) = path.path.segments.first() {
+                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                        if let syn::GenericArgument::Type(ty) = args.args.first().unwrap() {
+                            ty
+                        } else {
+                            todo!();
+                        }
+                    } else {
+                        todo!();
+                    }
+                } else {
+                    todo!();
+                }
+            } else {
+                todo!();
+            };
+            quote! {
+                let arg = VecArgument::<#ty>::new();
+                let #name = arg.consume(&mut #lines_ident).unwrap();
+            }
         } else {
             todo!();
         }
@@ -133,6 +155,17 @@ impl Parse for FunctionSignature {
     }
 }
 
+fn is_vec(ty: &Type) -> bool {
+    if let Type::Path(path) = ty {
+        if let Some(segment) = path.path.segments.first() {
+            if segment.ident == "Vec" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn is_isize(ty: &Type) -> bool {
     if let Type::Path(path) = ty {
         if let Some(segment) = path.path.segments.first() {
@@ -150,9 +183,42 @@ mod tests {
 
     use super::*;
     #[test]
-    fn parse_lines() {
-        let s = "1 2 4";
-        let mut lines = Lines::new(s);
+    fn parse_num_and_vec_lines() {
+        let s = "1 2 4
+1 2 3";
+        // expect expand assert_isize(1, 2, 3);
+        let token = parse_lines_impl(
+            quote! { lines },
+            quote! {
+                fn assert_isize(a: isize, b: isize, c: isize,v: Vec<isize>) {
+                    assert_eq!(a, 1);
+                    assert_eq!(b, 2);
+                    assert_eq!(c, 3);
+                    assert_eq!(v, vec![1, 2, 3]);
+                }
+            },
+        );
+        let expected = quote! {
+            fn assert_isize(a: isize, b: isize, c: isize,v: Vec<isize>) {
+                assert_eq!(a, 1);
+                assert_eq!(b, 2);
+                assert_eq!(c, 3);
+                assert_eq!(v, vec![1, 2, 3]);
+            }
+            let arg = FromStrArgument::<isize>::new();
+            let a = arg.consume(&mut lines).unwrap();
+            let arg = FromStrArgument::<isize>::new();
+            let b = arg.consume(&mut lines).unwrap();
+            let arg = FromStrArgument::<isize>::new();
+            let c = arg.consume(&mut lines).unwrap();
+            let arg = VecArgument::<isize>::new();
+            let v = arg.consume(&mut lines).unwrap();
+            assert_isize(a, b, c,v);
+        };
+        assert_eq!(token.to_string(), expected.to_string());
+    }
+    #[test]
+    fn parse_num_line() {
         // expect expand assert_isize(1, 2, 3);
         let token = parse_lines_impl(
             quote! { lines },
