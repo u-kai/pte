@@ -3,11 +3,12 @@ use std::{
     str::{FromStr, Split},
 };
 
-pub struct Line {
-    value: Split<'static, &'static str>,
+#[derive(Debug)]
+pub struct Line<'a> {
+    value: Split<'a, &'a str>,
 }
-impl Line {
-    pub fn new(value: &'static str) -> Self {
+impl<'a> Line<'a> {
+    pub fn new(value: &'a str) -> Self {
         Line {
             value: value.split(" "),
         }
@@ -23,15 +24,16 @@ impl Line {
     }
 }
 
-pub struct Lines {
-    inner: VecDeque<Line>,
+#[derive(Debug)]
+pub struct Lines<'a> {
+    inner: VecDeque<Line<'a>>,
 }
-impl Lines {
-    pub fn new(s: &'static str) -> Self {
+impl<'a> Lines<'a> {
+    pub fn new(s: &'a str) -> Self {
         let inner = s.split("\n").map(|s| Line::new(s)).collect();
         Lines { inner }
     }
-    pub fn next_line(&mut self) -> Option<Line> {
+    pub fn next_line(&mut self) -> Option<Line<'a>> {
         self.inner.pop_front()
     }
     pub fn next_data(&mut self) -> Option<&str> {
