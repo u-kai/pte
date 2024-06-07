@@ -55,11 +55,15 @@ fn parse_lines_impl(
                 let #name = arg.consume(&mut #lines_ident).unwrap();
             }
         } else if is_vec(ty) {
-            let ty = if let Type::Path(path) = ty {
-                if let Some(segment) = path.path.segments.first() {
-                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                        if let syn::GenericArgument::Type(ty) = args.args.first().unwrap() {
-                            ty
+            fn get_vec_type(ty: &Type) -> &Type {
+                if let Type::Path(path) = ty {
+                    if let Some(segment) = path.path.segments.first() {
+                        if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                            if let syn::GenericArgument::Type(ty) = args.args.first().unwrap() {
+                                ty
+                            } else {
+                                todo!();
+                            }
                         } else {
                             todo!();
                         }
@@ -69,12 +73,20 @@ fn parse_lines_impl(
                 } else {
                     todo!();
                 }
+            }
+
+            let ty = get_vec_type(ty);
+            if is_vec(ty) {
+                let ty = get_vec_type(ty);
+                quote! {
+                    let arg = TwoDVecArgument::<#ty>::new();
+                    let #name = arg.consume(&mut #lines_ident).unwrap();
+                }
             } else {
-                todo!();
-            };
-            quote! {
-                let arg = VecArgument::<#ty>::new();
-                let #name = arg.consume(&mut #lines_ident).unwrap();
+                quote! {
+                    let arg = VecArgument::<#ty>::new();
+                    let #name = arg.consume(&mut #lines_ident).unwrap();
+                }
             }
         } else {
             todo!();
@@ -179,13 +191,28 @@ fn is_isize(ty: &Type) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use helper::Lines;
-
     use super::*;
     #[test]
+    fn parse_two_d_vec_lines() {
+        // expect expand assert_isize(1, 2, 3);
+        let token = parse_lines_impl(
+            quote! { lines },
+            quote! {
+                fn assert_isize(two_d: Vec<Vec<isize>>) {
+                }
+            },
+        );
+        let expected = quote! {
+            fn assert_isize(two_d: Vec<Vec<isize> >) {
+            }
+            let arg = TwoDVecArgument::<isize>::new();
+            let two_d = arg.consume(&mut lines).unwrap();
+            assert_isize(two_d);
+        };
+        assert_eq!(token.to_string(), expected.to_string());
+    }
+    #[test]
     fn parse_num_and_vec_lines() {
-        let s = "1 2 4
-1 2 3";
         // expect expand assert_isize(1, 2, 3);
         let token = parse_lines_impl(
             quote! { lines },
