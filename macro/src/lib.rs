@@ -7,26 +7,48 @@ use syn::{
     Ident, Type,
 };
 
+fn dependencies() -> proc_macro2::TokenStream {
+    quote! {
+        use pte::{
+            Lines,
+            parse_lines,
+        };
+    }
+}
+
 #[proc_macro_attribute]
 pub fn atcorder_exe(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let attr = attr.to_string();
-    if attr == "main" {
-        atcorder_exe_main(item.into()).into()
+    atcorder_exe_impl(attr.into(), item.into()).into()
+}
+
+fn atcorder_exe_impl(
+    attr: proc_macro2::TokenStream,
+    item: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let attr_str = attr.to_string();
+    if attr_str == "main" {
+        atcorder_exe_main(item.into())
     } else {
-        panic!("unknown attribute: {}", attr);
+        let lit_str = parse_lit.parse2(attr).unwrap();
+        let dependencies = dependencies();
+        quote! {
+            #dependencies
+            let mut lines = Lines::new(#lit_str);
+            #[parse_lines(lines)]
+            #item
+        }
     }
 }
 
 fn atcorder_exe_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let dependencies = dependencies();
     quote! {
+        #dependencies
+
         fn main() {
-            use pte::{
-                Lines,
-                parse_lines,
-            };
             let mut i = String::new();
             let mut result = std::io::stdin().read_line(&mut i).unwrap();
             while result > 1 {
@@ -49,6 +71,9 @@ pub fn parse_lines(
 }
 
 fn parse_attr(attr: ParseStream) -> syn::Result<Ident> {
+    attr.parse()
+}
+fn parse_lit(attr: ParseStream) -> syn::Result<syn::Lit> {
     attr.parse()
 }
 
