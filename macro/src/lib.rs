@@ -28,60 +28,48 @@ fn pte_impl(
     attr: proc_macro2::TokenStream,
     item: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
+    let dependencies = dependencies();
     let attr_str = attr.to_string();
-    if attr_str == "" {
-        return pte_main(item.into(), 1);
-    }
-    let dependencies = dependencies();
-    if attr_str.contains("rows") {
-        let n = attr_str
-            .split("=")
-            .last()
-            .unwrap()
-            .trim_start()
-            .parse::<isize>()
-            .unwrap();
-        pte_main(item.into(), n)
-    } else {
-        let lit_str = parse_lit.parse2(attr).unwrap();
-        quote! {
+    let parse_attr = PteAttrParser::new(&attr_str);
+    if !parse_attr.exist_row_num_at_input() {
+        let n = parse_attr.get_row_num().unwrap();
+        let n_lit = proc_macro2::Literal::isize_unsuffixed(n);
+        return quote! {
             #dependencies
-            let mut lines = Lines::new(#lit_str);
-            #[parse_lines(lines)]
-            #item
-        }
-    }
-}
-
-fn read_stdin(n: isize) -> proc_macro2::TokenStream {
-    let n_lit = n.to_string();
-    let n_lit: proc_macro2::Literal = syn::parse_str(&n_lit).unwrap();
-    quote! {
-        let mut i = String::new();
-         //for _ in 0..#n_lit {
-         while let Ok(size) = std::io::stdin().read_line(&mut i){
-            println!("{}", size);
-            if size == 0 {
-                break;
+            fn main() {
+                let mut input = String::new();
+                for _ in 0..#n_lit {
+                    std::io::stdin().read_line(&mut input).unwrap();
+                }
+                let mut lines = Lines::new(&input);
+                #[parse_lines_and_println(lines)]
+                #item
             }
-         }
-        //}
-        let mut lines = Lines::new(&i);
+        };
     }
-}
-
-fn pte_main(item: proc_macro2::TokenStream, n: isize) -> proc_macro2::TokenStream {
-    let dependencies = dependencies();
-    let read_stdin = read_stdin(n);
+    let input_ref = parse_attr.get_input_ref().unwrap();
+    let input_ref: proc_macro2::Literal = syn::parse_str(&input_ref.to_string()).unwrap();
     quote! {
         #dependencies
         fn main() {
-            #read_stdin
+            let mut first_line = String::new();
+            std::io::stdin().read_line(&mut first_line).unwrap();
+
+            let mut lines = Lines::new(&first_line);
+            let mut row_num = 0;
+            for _ in 0..=#input_ref {
+                row_num = lines.consume::<usize>().unwrap();
+            }
+            let mut input = String::new();
+            for _ in 0..row_num {
+                std::io::stdin().read_line(&mut input).unwrap();
+            }
+            let mut lines = Lines::new(&input);
             #[parse_lines_and_println(lines)]
             #item
         }
+
     }
-    .into()
 }
 
 #[proc_macro_attribute]
@@ -264,6 +252,15 @@ impl PteAttrParser<'_> {
         let row_value = self.get_row_attr_value();
         row_value.parse::<isize>().map_err(|e| e.to_string())
     }
+
+    fn get_input_ref(&self) -> Result<usize, String> {
+        if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
+            return Err("input reference not found".to_string());
+        }
+        let row_value = self.get_row_attr_value();
+        parse_input_ref(row_value)
+    }
+
     fn get_row_attr_value(&self) -> &str {
         if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
             return "";
@@ -274,18 +271,6 @@ impl PteAttrParser<'_> {
             .unwrap_or_default();
         let split = row_attr.split("=");
         split.last().unwrap_or_default().trim()
-    }
-    fn get_row_num_from_input(&self, input_rows: &str) -> Result<isize, String> {
-        let row_value = self.get_row_attr_value();
-        let input_ref = parse_input_ref(row_value)?;
-        let Some(first_line) = input_rows.lines().next() else {
-            return Err("input rows is empty".to_string());
-        };
-        let values = first_line.split_whitespace().collect::<Vec<&str>>();
-        let Ok(n) = values[input_ref].parse::<isize>() else {
-            return Err(format!("invalid input reference {}", input_ref));
-        };
-        Ok(n)
     }
     fn default_row_num(&self) -> isize {
         1
@@ -314,8 +299,8 @@ mod tests {
         let sut = PteAttrParser::new(attr);
         let input_row = "3 2\n";
         assert!(sut.exist_row_num_at_input());
-        let got = sut.get_row_num_from_input(input_row).unwrap();
-        assert_eq!(got, 3);
+        let got = sut.get_input_ref().unwrap();
+        assert_eq!(got, 0);
     }
     #[test]
     fn parse_attr_row_default() {
