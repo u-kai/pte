@@ -224,7 +224,11 @@ impl PteAttrParser<'_> {
         PteAttrParser { attr }
     }
     fn exist_row_num_at_input(&self) -> bool {
-        self.attr.contains(Self::ROW_KEY)
+        if !self.attr.contains(Self::ROW_KEY) {
+            return false;
+        }
+        let row_value = self.get_row_attr_value();
+        row_value.get(0..2).is_some_and(|s| s == "in")
     }
     // get by default or row = NUMBER
     fn get_row_num(&self) -> Result<isize, String> {
@@ -239,8 +243,19 @@ impl PteAttrParser<'_> {
         if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
             return Err("input reference not found".to_string());
         }
+        self.parse_input_ref()
+    }
+
+    fn parse_input_ref(&self) -> Result<usize, String> {
+        fn error_msg(v: &str) -> String {
+            format!("invalid input reference {}, format is \"inNUMBER\"", v)
+        }
+        assert!(self.exist_row_num_at_input());
         let row_value = self.get_row_attr_value();
-        parse_input_ref(row_value)
+        let Ok(result) = row_value[2..3].parse::<usize>() else {
+            return Err(error_msg(row_value));
+        };
+        Ok(result)
     }
 
     fn get_row_attr_value(&self) -> &str {
@@ -257,19 +272,6 @@ impl PteAttrParser<'_> {
     fn default_row_num(&self) -> isize {
         1
     }
-}
-
-fn parse_input_ref(input_ref: &str) -> Result<usize, String> {
-    fn error_msg(v: &str) -> String {
-        format!("invalid input reference {}, format is \"inNUMBER\"", v)
-    }
-    let Some("in") = input_ref.get(0..2) else {
-        return Err(error_msg(input_ref));
-    };
-    let Ok(result) = input_ref[2..3].parse::<usize>() else {
-        return Err(error_msg(input_ref));
-    };
-    Ok(result)
 }
 
 #[cfg(test)]

@@ -2,46 +2,88 @@
 
 ## pte
 
+pte is a macro to parse input to execute the function.
+
 ### How to use
 
 1. Add dependency to your `Cargo.toml`.
 
-```toml
-[dependencies]
-pte = {git = "https://github.com/u-kai/atcoder-exe.git",path="./pte"}
-```
+   ```toml
+   [dependencies]
+   pte = {git = "https://github.com/u-kai/atcoder-exe.git",path="./pte"}
+   ```
 
 1. Write your function that solves the problem. The function will take stdin as arguments and print a value to stdout.
 
-```rust
-fn solve(a: i32, b: i32) -> i32 {
-    a + b
-}
-```
+   ```rust
+   fn solve(a: i32, b: i32) -> i32 {
+       a + b
+   }
+   ```
 
 1. Use the `pte` macro and define the function you want to use.
 
-```rust
-use pte::pte;
-#[pte]
-fn solve(a: i32, b: i32) -> i32 {
-    a + b
-}
-```
+   ```rust
+   use pte::pte;
+   #[pte]
+   fn solve(a: i32, b: i32) -> i32 {
+       a + b
+   }
+   ```
 
 1. Run the code and you will be prompted to enter the input.
 
-```shell
-$ cargo run
-1 2
+   ```shell
+   $ cargo run
+   1 2
+   3
+   ```
 
-3
+- The input is `1 2` and the output is `3` which is the result of `1 + 2`.
+
+### Case specify the number of input rows
+
+- If you want to specify the number of input rows, you can write the code like below.
+
+```rust
+use pte::pte;
+#[pte(row = 2)]
+fn solve(a: i32, b: i32,v:Vec<char>) -> i32 {
+    a + b + v.len() as i32
+}
 ```
 
-- The input is `1 2` and next line appears to enter the input.
-- The output is `3` which is the result of `1 + 2`.
+```shell
+cargo run
+1 2   # a and b
+6 7 8 # v
+```
 
-## OLD
+- If you want to specify the number of input rows from first input line, you can use the `pte!` macro.
+- For example, input is below, first line is `3 2`, 3 is the number of columns and 2 is the number of rows.
+
+```shell
+cargo run
+3 2   # 3 is skip and 2 is mapped number of rows
+a b c # read and mapped to v
+d e f # read and mapped to v
+```
+
+- You can write the code like below.
+
+```rust
+use pte::pte;
+#[pte(row = in1)]
+fn solve(v:Vec<Vec<char>>) -> i32 {
+   v.len() as i32
+}
+```
+
+- `in` means input and `1` means the index of the first input line.
+- You couldn't specify the number of columns, because the number of columns is automatically detected.
+- If you didn't specify the number of rows, default is 1.
+
+## OLD Ver
 
 - Below code is the full code to submit to Atcoder.
 
