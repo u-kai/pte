@@ -28,7 +28,7 @@ fn pte_impl(
     item: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let dependencies = dependencies();
-    let fn_sig = fn_parse.parse2(item.clone()).unwrap();
+    let fn_sig = fn_parse.parse2(item).unwrap();
     let consume_lines =
         fn_sig.to_consume_lines_token_stream(syn::Ident::new("lines", fn_sig.name.span()));
     let fn_sig_declare = fn_sig.to_declare_token_stream();
@@ -48,6 +48,7 @@ fn pte_impl(
         }
     }
 }
+
 fn setup_lines(attr: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let attr_str = attr.to_string();
     let parse_attr = PteAttrParser::new(&attr_str);
@@ -88,22 +89,6 @@ fn setup_lines_by_row_num(row_num: isize) -> proc_macro2::TokenStream {
     }
 }
 
-fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
-    let Type::Path(path) = ty else {
-        return Err(syn::Error::new(ty.span(), "expected path"));
-    };
-    let Some(segment) = path.path.segments.first() else {
-        return Err(syn::Error::new(ty.span(), "expected segment"));
-    };
-    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
-    };
-    let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
-        return Err(syn::Error::new(ty.span(), "expected type"));
-    };
-    Ok(ty)
-}
-
 struct FunctionSignature {
     name: Ident,
     args: Vec<(Ident, Type)>,
@@ -121,6 +106,7 @@ impl FunctionSignature {
             #name(#(#args),*);
         }
     }
+
     fn to_declare_token_stream(&self) -> proc_macro2::TokenStream {
         let name = &self.name;
         let args = self.args.iter().map(|(name, ty)| {
@@ -132,12 +118,17 @@ impl FunctionSignature {
             fn #name(#(#args),*) #ty #body
         }
     }
+
     fn to_consume_lines_token_stream(&self, lines_ident: Ident) -> proc_macro2::TokenStream {
-        let result = self.args.iter().map(|(name, ty)| {
-            if is_vec(ty) {
-                let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
+        fn arg_to_consume_line_token_stream(
+            arg: &(Ident, Type),
+            lines_ident: &Ident,
+        ) -> proc_macro2::TokenStream {
+            let (name, ty) = arg;
+            if is_vec(&ty) {
+                let ty = get_vec_type(&ty).unwrap();
                 if is_vec(ty) {
-                    let ty = get_vec_type(ty).map_err(|e| e.to_compile_error()).unwrap();
+                    let ty = get_vec_type(ty).unwrap();
                     return quote! {
                         let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
                     };
@@ -149,15 +140,17 @@ impl FunctionSignature {
             quote! {
                 let #name = #lines_ident.consume::<#ty>().unwrap();
             }
-        });
+        }
+
+        let result = self
+            .args
+            .iter()
+            .map(|arg| arg_to_consume_line_token_stream(arg, &lines_ident));
+
         quote! {
             #(#result)*
         }
     }
-}
-
-fn fn_parse(input: ParseStream) -> syn::Result<FunctionSignature> {
-    FunctionSignature::parse(input)
 }
 
 impl Parse for FunctionSignature {
@@ -200,6 +193,26 @@ impl Parse for FunctionSignature {
             body,
         })
     }
+}
+
+fn fn_parse(input: ParseStream) -> syn::Result<FunctionSignature> {
+    FunctionSignature::parse(input)
+}
+
+fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
+    let Type::Path(path) = ty else {
+        return Err(syn::Error::new(ty.span(), "expected path"));
+    };
+    let Some(segment) = path.path.segments.first() else {
+        return Err(syn::Error::new(ty.span(), "expected segment"));
+    };
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
+    };
+    let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
+        return Err(syn::Error::new(ty.span(), "expected type"));
+    };
+    Ok(ty)
 }
 
 fn is_vec(ty: &Type) -> bool {
@@ -310,24 +323,6 @@ mod tests {
         };
         assert_eq!(got.to_string(), expect.to_string());
     }
-
-    #[test]
-    fn parse_attr_row_from_input() {
-        let attr = "row = in0, column = in1";
-        let sut = PteAttrParser::new(attr);
-        assert!(sut.exist_row_num_at_input());
-        let got = sut.get_input_ref().unwrap();
-        assert_eq!(got, 0);
-    }
-    #[test]
-    fn parse_attr_row_default() {
-        let attr = "";
-        let sut = PteAttrParser::new(attr);
-
-        assert!(!sut.exist_row_num_at_input());
-        let got = sut.get_row_num().unwrap();
-        assert_eq!(got, 1);
-    }
     #[test]
     fn setup_lines() {
         let n = 3;
@@ -358,5 +353,22 @@ mod tests {
             let mut lines = Lines::new(&input);
         };
         assert_eq!(got.to_string(), expect.to_string());
+    }
+    #[test]
+    fn parse_attr_row_from_input() {
+        let attr = "row = in0, column = in1";
+        let sut = PteAttrParser::new(attr);
+        assert!(sut.exist_row_num_at_input());
+        let got = sut.get_input_ref().unwrap();
+        assert_eq!(got, 0);
+    }
+    #[test]
+    fn parse_attr_row_default() {
+        let attr = "";
+        let sut = PteAttrParser::new(attr);
+
+        assert!(!sut.exist_row_num_at_input());
+        let got = sut.get_row_num().unwrap();
+        assert_eq!(got, 1);
     }
 }

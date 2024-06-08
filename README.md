@@ -41,9 +41,9 @@ pte is a macro to parse input to execute the function.
 
 - The input is `1 2` and the output is `3` which is the result of `1 + 2`.
 
-### Case specify the number of input rows
+### Specifying the Number of Input Rows
 
-- If you want to specify the number of input rows, you can write the code like below.
+- If you want to specify the number of input rows, you can write the code like this:
 
 ```rust
 use pte::pte;

@@ -8,7 +8,7 @@ use pte::pte;
 // 3 4 5
 // 6 7
 // 8 9 10
-#[pte(row = in0)]
+#[pte(row = in1)]
 fn solve(v: Vec<Vec<isize>>) -> isize {
     v.iter().flatten().sum::<isize>()
 }
