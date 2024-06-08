@@ -30,17 +30,18 @@ fn pte_impl(
 ) -> proc_macro2::TokenStream {
     let attr_str = attr.to_string();
     if attr_str == "" {
-        return pte_main(item.into());
+        return pte_main(item.into(), 1);
     }
     let dependencies = dependencies();
-    if attr_str == "main" {
-        let read_stdin = read_stdin();
-        quote! {
-            #dependencies
-            #read_stdin
-            #[parse_lines_and_println(lines)]
-            #item
-        }
+    if attr_str.contains("rows") {
+        let n = attr_str
+            .split("=")
+            .last()
+            .unwrap()
+            .trim_start()
+            .parse::<isize>()
+            .unwrap();
+        pte_main(item.into(), n)
     } else {
         let lit_str = parse_lit.parse2(attr).unwrap();
         quote! {
@@ -52,23 +53,28 @@ fn pte_impl(
     }
 }
 
-fn read_stdin() -> proc_macro2::TokenStream {
+fn read_stdin(n: isize) -> proc_macro2::TokenStream {
+    let n_lit = n.to_string();
+    let n_lit: proc_macro2::Literal = syn::parse_str(&n_lit).unwrap();
     quote! {
         let mut i = String::new();
-        let mut result = std::io::stdin().read_line(&mut i).unwrap();
-        while result > 1 {
-            result = std::io::stdin().read_line(&mut i).unwrap();
-        }
+         //for _ in 0..#n_lit {
+         while let Ok(size) = std::io::stdin().read_line(&mut i){
+            println!("{}", size);
+            if size == 0 {
+                break;
+            }
+         }
+        //}
         let mut lines = Lines::new(&i);
     }
 }
 
-fn pte_main(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn pte_main(item: proc_macro2::TokenStream, n: isize) -> proc_macro2::TokenStream {
     let dependencies = dependencies();
-    let read_stdin = read_stdin();
+    let read_stdin = read_stdin(n);
     quote! {
         #dependencies
-
         fn main() {
             #read_stdin
             #[parse_lines_and_println(lines)]
@@ -207,7 +213,6 @@ impl Parse for FunctionSignature {
         } else {
             quote! {}
         };
-
         let body: syn::Block = input.parse().map_err(|e| {
             syn::Error::new(
                 e.span(),
@@ -238,9 +243,90 @@ fn is_vec(ty: &Type) -> bool {
     false
 }
 
+#[derive(Debug)]
+struct PteAttrParser<'a> {
+    attr: &'a str,
+}
+
+impl PteAttrParser<'_> {
+    const ROW_KEY: &'static str = "row";
+    fn new(attr: &str) -> PteAttrParser {
+        PteAttrParser { attr }
+    }
+    fn exist_row_num_at_input(&self) -> bool {
+        self.attr.contains(Self::ROW_KEY)
+    }
+    // get by default or row = NUMBER
+    fn get_row_num(&self) -> Result<isize, String> {
+        if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
+            return Ok(self.default_row_num());
+        }
+        let row_value = self.get_row_attr_value();
+        row_value.parse::<isize>().map_err(|e| e.to_string())
+    }
+    fn get_row_attr_value(&self) -> &str {
+        if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
+            return "";
+        }
+        let mut attrs = self.attr.split(",");
+        let row_attr = attrs
+            .find(|attr| attr.contains(Self::ROW_KEY))
+            .unwrap_or_default();
+        let split = row_attr.split("=");
+        split.last().unwrap_or_default().trim()
+    }
+    fn get_row_num_from_input(&self, input_rows: &str) -> Result<isize, String> {
+        let row_value = self.get_row_attr_value();
+        let input_ref = parse_input_ref(row_value)?;
+        let Some(first_line) = input_rows.lines().next() else {
+            return Err("input rows is empty".to_string());
+        };
+        let values = first_line.split_whitespace().collect::<Vec<&str>>();
+        let Ok(n) = values[input_ref].parse::<isize>() else {
+            return Err(format!("invalid input reference {}", input_ref));
+        };
+        Ok(n)
+    }
+    fn default_row_num(&self) -> isize {
+        1
+    }
+}
+
+fn parse_input_ref(input_ref: &str) -> Result<usize, String> {
+    fn error_msg(v: &str) -> String {
+        format!("invalid input reference {}, format is \"inNUMBER\"", v)
+    }
+    let Some("in") = input_ref.get(0..2) else {
+        return Err(error_msg(input_ref));
+    };
+    let Ok(result) = input_ref[2..3].parse::<usize>() else {
+        return Err(error_msg(input_ref));
+    };
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn parse_attr_row_from_input() {
+        let attr = "row = in0, column = in1";
+        let sut = PteAttrParser::new(attr);
+        let input_row = "3 2\n";
+        assert!(sut.exist_row_num_at_input());
+        let got = sut.get_row_num_from_input(input_row).unwrap();
+        assert_eq!(got, 3);
+    }
+    #[test]
+    fn parse_attr_row_default() {
+        let attr = "";
+        let sut = PteAttrParser::new(attr);
+        let input_row = "1 2\n";
+
+        assert!(!sut.exist_row_num_at_input());
+        let got = sut.get_row_num().unwrap();
+        assert_eq!(got, 1);
+    }
     #[test]
     fn parse_two_d_vec_lines() {
         // expect expand assert_isize(1, 2, 3);
