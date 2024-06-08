@@ -276,6 +276,40 @@ fn parse_input_ref(input_ref: &str) -> Result<usize, String> {
 mod tests {
     use super::*;
     #[test]
+    fn pte_test() {
+        let attr = quote! { row = in1 };
+        let item = quote! {
+            fn solve(v: usize) -> i32 {
+            }
+        };
+        let got = pte_impl(attr, item);
+
+        let expect = quote! {
+            use pte::{
+                Lines,
+            };
+            fn solve(v:usize) -> i32 {
+            }
+            fn main() {
+                let mut first_line = String::new();
+                std::io::stdin().read_line(&mut first_line).unwrap();
+
+                let row_num = first_line.split_whitespace().nth(1).unwrap().parse::<usize>().unwrap();
+
+                let mut input = String::new();
+                for _ in 0..row_num {
+                    std::io::stdin().read_line(&mut input).unwrap();
+                }
+                let mut lines = Lines::new(&input);
+                let v = lines.consume::<usize>().unwrap();
+                let result = solve(v);
+                println!("{}", result);
+            }
+        };
+        assert_eq!(got.to_string(), expect.to_string());
+    }
+
+    #[test]
     fn parse_attr_row_from_input() {
         let attr = "row = in0, column = in1";
         let sut = PteAttrParser::new(attr);
