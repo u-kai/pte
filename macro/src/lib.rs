@@ -11,7 +11,6 @@ fn dependencies() -> proc_macro2::TokenStream {
     quote! {
         use pte::{
             Lines,
-            parse_lines_and_println,
         };
     }
 }
@@ -29,80 +28,63 @@ fn pte_impl(
     item: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let dependencies = dependencies();
-    let attr_str = attr.to_string();
-    let parse_attr = PteAttrParser::new(&attr_str);
-    if !parse_attr.exist_row_num_at_input() {
-        let n = parse_attr.get_row_num().unwrap();
-        let n_lit = proc_macro2::Literal::isize_unsuffixed(n);
-        return quote! {
-            #dependencies
-            fn main() {
-                let mut input = String::new();
-                for _ in 0..#n_lit {
-                    std::io::stdin().read_line(&mut input).unwrap();
-                }
-                let mut lines = Lines::new(&input);
-                #[parse_lines_and_println(lines)]
-                #item
-            }
-        };
-    }
-    let input_ref = parse_attr.get_input_ref().unwrap();
-    let input_ref: proc_macro2::Literal = syn::parse_str(&input_ref.to_string()).unwrap();
-    quote! {
-        #dependencies
-        fn main() {
-            let mut first_line = String::new();
-            std::io::stdin().read_line(&mut first_line).unwrap();
-
-            let mut lines = Lines::new(&first_line);
-            let mut row_num = 0;
-            for _ in 0..=#input_ref {
-                row_num = lines.consume::<usize>().unwrap();
-            }
-            let mut input = String::new();
-            for _ in 0..row_num {
-                std::io::stdin().read_line(&mut input).unwrap();
-            }
-            let mut lines = Lines::new(&input);
-            #[parse_lines_and_println(lines)]
-            #item
-        }
-
-    }
-}
-
-#[proc_macro_attribute]
-pub fn parse_lines_and_println(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    parse_lines_and_println_impl(attr.into(), item.into()).into()
-}
-
-fn parse_attr(attr: ParseStream) -> syn::Result<Ident> {
-    attr.parse()
-}
-fn parse_lit(attr: ParseStream) -> syn::Result<syn::Lit> {
-    attr.parse()
-}
-
-fn parse_lines_and_println_impl(
-    lines: proc_macro2::TokenStream,
-    item: proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
-    let lines_ident = parse_attr.parse2(lines).unwrap();
-    let fn_sig = fn_parse.parse2(item).unwrap();
-    let consume_lines = fn_sig.to_consume_lines_token_stream(lines_ident);
+    let fn_sig = fn_parse.parse2(item.clone()).unwrap();
+    let consume_lines =
+        fn_sig.to_consume_lines_token_stream(syn::Ident::new("lines", fn_sig.name.span()));
     let fn_sig_declare = fn_sig.to_declare_token_stream();
     let fn_sig_execute = fn_sig.to_execute_token_stream();
+
+    let setup_lines = setup_lines(attr);
     quote! {
+        #dependencies
+
         #fn_sig_declare
 
-        #consume_lines
+        fn main() {
+            #setup_lines
+            #consume_lines
+            let result = #fn_sig_execute
+            println!("{}", result);
+        }
+    }
+}
+fn setup_lines(attr: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let attr_str = attr.to_string();
+    let parse_attr = PteAttrParser::new(&attr_str);
+    if parse_attr.exist_row_num_at_input() {
+        return setup_lines_by_parse_input(parse_attr);
+    }
+    let n = parse_attr.get_row_num().unwrap();
+    setup_lines_by_row_num(n)
+}
 
-        let result = #fn_sig_execute
-        println!("{}", result);
+fn setup_lines_by_parse_input(parser: PteAttrParser) -> proc_macro2::TokenStream {
+    assert!(parser.exist_row_num_at_input());
+
+    let input_ref = parser.get_input_ref().unwrap();
+    let input_ref: proc_macro2::Literal = syn::parse_str(&input_ref.to_string()).unwrap();
+    quote! {
+        let mut first_line = String::new();
+        std::io::stdin().read_line(&mut first_line).unwrap();
+
+        let row_num = first_line.split_whitespace().nth(#input_ref).unwrap().parse::<usize>().unwrap();
+
+        let mut input = String::new();
+        for _ in 0..row_num {
+            std::io::stdin().read_line(&mut input).unwrap();
+        }
+        let mut lines = Lines::new(&input);
+    }
+}
+
+fn setup_lines_by_row_num(row_num: isize) -> proc_macro2::TokenStream {
+    let row_num_lit = proc_macro2::Literal::isize_unsuffixed(row_num);
+    quote! {
+        let mut input = String::new();
+        for _ in 0..#row_num_lit {
+            std::io::stdin().read_line(&mut input).unwrap();
+        }
+        let mut lines = Lines::new(&input);
     }
 }
 
@@ -297,7 +279,6 @@ mod tests {
     fn parse_attr_row_from_input() {
         let attr = "row = in0, column = in1";
         let sut = PteAttrParser::new(attr);
-        let input_row = "3 2\n";
         assert!(sut.exist_row_num_at_input());
         let got = sut.get_input_ref().unwrap();
         assert_eq!(got, 0);
@@ -306,82 +287,40 @@ mod tests {
     fn parse_attr_row_default() {
         let attr = "";
         let sut = PteAttrParser::new(attr);
-        let input_row = "1 2\n";
 
         assert!(!sut.exist_row_num_at_input());
         let got = sut.get_row_num().unwrap();
         assert_eq!(got, 1);
     }
     #[test]
-    fn parse_two_d_vec_lines() {
-        // expect expand assert_isize(1, 2, 3);
-        let token = parse_lines_and_println_impl(
-            quote! { lines },
-            quote! {
-                fn assert_isize(two_d: Vec<Vec<isize>>) {
-                }
-            },
-        );
-        let expected = quote! {
-            fn assert_isize(two_d: Vec<Vec<isize> >) {
+    fn setup_lines() {
+        let n = 3;
+        let got = setup_lines_by_row_num(n);
+        let expect = quote! {
+            let mut input = String::new();
+            for _ in 0..3 {
+                std::io::stdin().read_line(&mut input).unwrap();
             }
-            let two_d = lines.consume_to_two_d_vec::<isize>().unwrap();
-            let result = assert_isize(two_d);
-            println!("{}", result);
+            let mut lines = Lines::new(&input);
         };
-        assert_eq!(token.to_string(), expected.to_string());
-    }
-    #[test]
-    fn parse_num_and_vec_lines() {
-        // expect expand assert_isize(1, 2, 3);
-        let token = parse_lines_and_println_impl(
-            quote! { lines },
-            quote! {
-                fn assert_isize(a: isize, b: isize, c: isize,v: Vec<isize>) {
-                    assert_eq!(a, 1);
-                    assert_eq!(b, 2);
-                    assert_eq!(c, 3);
-                    assert_eq!(v, vec![1, 2, 3]);
-                }
-            },
-        );
-        let expected = quote! {
-            fn assert_isize(a: isize, b: isize, c: isize,v: Vec<isize>) {
-                assert_eq!(a, 1);
-                assert_eq!(b, 2);
-                assert_eq!(c, 3);
-                assert_eq!(v, vec![1, 2, 3]);
+        assert_eq!(got.to_string(), expect.to_string());
+
+        let attr = "row = in0";
+        let parser = PteAttrParser::new(attr);
+        let got = setup_lines_by_parse_input(parser);
+
+        let expect = quote! {
+            let mut first_line = String::new();
+            std::io::stdin().read_line(&mut first_line).unwrap();
+
+            let row_num = first_line.split_whitespace().nth(0).unwrap().parse::<usize>().unwrap();
+
+            let mut input = String::new();
+            for _ in 0..row_num {
+                std::io::stdin().read_line(&mut input).unwrap();
             }
-            let a = lines.consume::<isize>().unwrap();
-            let b = lines.consume::<isize>().unwrap();
-            let c = lines.consume::<isize>().unwrap();
-            let v = lines.consume_to_vec::<isize>().unwrap();
-            let result = assert_isize(a, b, c,v);
-            println!("{}", result);
+            let mut lines = Lines::new(&input);
         };
-        assert_eq!(token.to_string(), expected.to_string());
-    }
-    #[test]
-    fn parse_num_line() {
-        // expect expand assert_isize(1, 2, 3);
-        let token = parse_lines_and_println_impl(
-            quote! { lines },
-            quote! {
-                fn add(a: isize, b: isize, c: isize) -> isize {
-                    a + b + c
-                }
-            },
-        );
-        let expected = quote! {
-            fn add(a: isize, b: isize, c: isize) -> isize {
-                a + b + c
-            }
-            let a = lines.consume::<isize>().unwrap();
-            let b = lines.consume::<isize>().unwrap();
-            let c = lines.consume::<isize>().unwrap();
-            let result = add(a, b, c);
-            println!("{}", result);
-        };
-        assert_eq!(token.to_string(), expected.to_string());
+        assert_eq!(got.to_string(), expect.to_string());
     }
 }

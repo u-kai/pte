@@ -1,8 +1,16 @@
 use pte::pte;
 
-#[pte(row = in0,column = in1)]
-fn solve(v: Vec<Vec<isize>>) -> i32 {
+#[pte(row = in1)]
+fn solve(v: Vec<Vec<char>>) -> i32 {
     println!("{:?}", v);
-    v.iter().map(|v| v.iter().sum::<isize>()).sum::<isize>() as i32
+    v.iter().map(|x| x.len()).sum::<usize>() as i32
 }
-//fn main() {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test() {
+        let v = vec![vec!['a', 'b'], vec!['c', 'd']];
+        assert_eq!(super::solve(v), 4);
+    }
+}
