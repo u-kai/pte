@@ -10,7 +10,7 @@ pte is a macro to parse input to execute the function.
 
    ```toml
    [dependencies]
-   pte = {git = "https://github.com/u-kai/pte.git",path="./pte"}
+   pte = {git = "https://github.com/u-kai/pte.git"}
    ```
 
 1. Write your function that solves the problem. The function will take stdin as arguments and print a value to stdout.
