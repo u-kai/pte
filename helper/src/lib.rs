@@ -69,6 +69,10 @@ impl<'a> Lines<'a> {
         }
         Some(result)
     }
+    pub fn extend(&mut self, s: &'a str) {
+        let inner = s.split("\n").map(|s| Line::new(s)).collect::<Vec<_>>();
+        self.inner.extend(inner);
+    }
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -133,6 +137,23 @@ mod tests {
         assert_eq!(vec.unwrap(), vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let vec = lines.consume_to_two_d_vec::<isize>();
         assert_eq!(vec, None);
+    }
+    #[test]
+    fn lines_can_extends() {
+        let s = "1 2 3\n4 5 6";
+        let mut lines = Lines::new(s);
+        let data = lines.consume::<isize>();
+        assert_eq!(data.unwrap(), 1);
+        let extend = "7 8 9\n10 11 12";
+        lines.extend(extend);
+        let data = lines.consume::<isize>();
+        assert_eq!(data.unwrap(), 2);
+        let data = lines.consume::<isize>();
+        assert_eq!(data.unwrap(), 3);
+        let v = lines.consume_to_vec::<isize>();
+        assert_eq!(v.unwrap(), vec![4, 5, 6]);
+        let v = lines.consume_to_two_d_vec::<isize>();
+        assert_eq!(v.unwrap(), vec![vec![7, 8, 9], vec![10, 11, 12]]);
     }
     #[test]
     fn line_next_data() {

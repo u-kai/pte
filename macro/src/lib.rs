@@ -1,7 +1,5 @@
 extern crate proc_macro;
 
-use std::collections::HashMap;
-
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream, Parser},
@@ -50,6 +48,33 @@ fn fn_declare(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
 }
 
 fn consume_lines(fn_sig: &FunctionSignature, lines_ident: Ident) -> proc_macro2::TokenStream {
+    fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
+        let Type::Path(path) = ty else {
+            return Err(syn::Error::new(ty.span(), "expected path"));
+        };
+        let Some(segment) = path.path.segments.first() else {
+            return Err(syn::Error::new(ty.span(), "expected segment"));
+        };
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
+        };
+        let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
+            return Err(syn::Error::new(ty.span(), "expected type"));
+        };
+        Ok(ty)
+    }
+
+    fn is_vec(ty: &Type) -> bool {
+        if let Type::Path(path) = ty {
+            if let Some(segment) = path.path.segments.first() {
+                if segment.ident == "Vec" {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn arg_to_consume_line_token_stream(
         arg: &(Ident, Type),
         lines_ident: &Ident,
@@ -76,6 +101,18 @@ fn consume_lines(fn_sig: &FunctionSignature, lines_ident: Ident) -> proc_macro2:
         .args
         .iter()
         .map(|arg| arg_to_consume_line_token_stream(arg, &lines_ident));
+    // |(name,ty)|{
+    //    if name == row_ref {
+    //       return quote! {
+    //          let #name = #lines_ident.consume::<usize>().unwrap();
+    //          let mut input = String::new();
+    //          for _ in 0..#name {
+    //              std::io::stdin().read_line(&mut input).unwrap();
+    //          }
+    //          let mut lines = #lines_indent.extend(&input);
+    //    }
+    //    let ty = get_vec_type(&ty).unwrap();
+    // }
 
     quote! {
         #(#result)*
@@ -215,33 +252,6 @@ fn fn_parse(input: ParseStream) -> syn::Result<FunctionSignature> {
     FunctionSignature::parse(input)
 }
 
-fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
-    let Type::Path(path) = ty else {
-        return Err(syn::Error::new(ty.span(), "expected path"));
-    };
-    let Some(segment) = path.path.segments.first() else {
-        return Err(syn::Error::new(ty.span(), "expected segment"));
-    };
-    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
-    };
-    let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
-        return Err(syn::Error::new(ty.span(), "expected type"));
-    };
-    Ok(ty)
-}
-
-fn is_vec(ty: &Type) -> bool {
-    if let Type::Path(path) = ty {
-        if let Some(segment) = path.path.segments.first() {
-            if segment.ident == "Vec" {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 #[derive(Debug)]
 struct PteAttrParser<'a> {
     attr: &'a str,
@@ -311,8 +321,16 @@ mod tests {
     // ただし、FunctionSignatureはパースされた結果が格納されている構造体であり、その後にプログラムを記述すること自体も責務としてあるが、これはSRPに反している？
     // FunctionSginatureを単純にデータの提供する構造体として定義して、さまざまなプログラム生成関数に渡すことでプログラムを作成する方が良い気がしてきた
     // row = 引数の変数名
-    //
-    //
+    // let mut first_line = String::new();
+    // std::io::stdin().read_line(&mut first_line).unwrap();
+    // let mut lines = Lines::new(&first_line);
+    // let n = lines.consume::<usize>().unwrap();
+    // let mut input = String::new();
+    // for _ in 0..n {
+    //    std::io::stdin().read_line(&mut input).unwrap();
+    // }
+    // let mut lines = Lines::new(&input);
+    // let v = lines.consume::<usize>().unwrap();
     // row = inNUMBER
     // let mut first_line = String::new();
     // std::io::stdin().read_line(&mut first_line).unwrap();
