@@ -1,5 +1,7 @@
 extern crate proc_macro;
 
+use std::collections::HashMap;
+
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream, Parser},
@@ -23,6 +25,66 @@ pub fn pte(
     pte_impl(attr.into(), item.into()).into()
 }
 
+fn to_execute_token_stream(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
+    let name = fn_sig.name();
+    let args = fn_sig.args();
+    let args = args.iter().map(|(name, _)| {
+        quote! { #name }
+    });
+    quote! {
+        #name(#(#args),*);
+    }
+}
+
+fn to_declare_token_stream(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
+    let name = fn_sig.name();
+    let args = fn_sig.args();
+    let args = args.iter().map(|(name, ty)| {
+        quote! { #name: #ty }
+    });
+    let ty = fn_sig.return_type();
+    let body = fn_sig.block();
+    quote! {
+        fn #name(#(#args),*) #ty #body
+    }
+}
+
+fn to_consume_lines_token_stream(
+    fn_sig: &FunctionSignature,
+    lines_ident: Ident,
+) -> proc_macro2::TokenStream {
+    fn arg_to_consume_line_token_stream(
+        arg: &(Ident, Type),
+        lines_ident: &Ident,
+    ) -> proc_macro2::TokenStream {
+        let (name, ty) = arg;
+        if is_vec(&ty) {
+            let ty = get_vec_type(&ty).unwrap();
+            if is_vec(ty) {
+                let ty = get_vec_type(ty).unwrap();
+                return quote! {
+                    let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
+                };
+            }
+            return quote! {
+                let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
+            };
+        }
+        quote! {
+            let #name = #lines_ident.consume::<#ty>().unwrap();
+        }
+    }
+
+    let result = fn_sig
+        .args
+        .iter()
+        .map(|arg| arg_to_consume_line_token_stream(arg, &lines_ident));
+
+    quote! {
+        #(#result)*
+    }
+}
+
 fn pte_impl(
     attr: proc_macro2::TokenStream,
     item: proc_macro2::TokenStream,
@@ -30,9 +92,9 @@ fn pte_impl(
     let dependencies = dependencies();
     let fn_sig = fn_parse.parse2(item).unwrap();
     let consume_lines =
-        fn_sig.to_consume_lines_token_stream(syn::Ident::new("lines", fn_sig.name.span()));
-    let fn_sig_declare = fn_sig.to_declare_token_stream();
-    let fn_sig_execute = fn_sig.to_execute_token_stream();
+        to_consume_lines_token_stream(&fn_sig, syn::Ident::new("lines", fn_sig.name.span()));
+    let fn_sig_declare = to_declare_token_stream(&fn_sig);
+    let fn_sig_execute = to_execute_token_stream(&fn_sig);
 
     let setup_lines = setup_lines(attr);
     quote! {
@@ -97,59 +159,17 @@ struct FunctionSignature {
 }
 
 impl FunctionSignature {
-    fn to_execute_token_stream(&self) -> proc_macro2::TokenStream {
-        let name = &self.name;
-        let args = self.args.iter().map(|(name, _)| {
-            quote! { #name }
-        });
-        quote! {
-            #name(#(#args),*);
-        }
+    fn name(&self) -> &Ident {
+        &self.name
     }
-
-    fn to_declare_token_stream(&self) -> proc_macro2::TokenStream {
-        let name = &self.name;
-        let args = self.args.iter().map(|(name, ty)| {
-            quote! { #name: #ty }
-        });
-        let ty = &self.return_type;
-        let body = &self.body;
-        quote! {
-            fn #name(#(#args),*) #ty #body
-        }
+    fn args(&self) -> &[(Ident, Type)] {
+        &self.args
     }
-
-    fn to_consume_lines_token_stream(&self, lines_ident: Ident) -> proc_macro2::TokenStream {
-        fn arg_to_consume_line_token_stream(
-            arg: &(Ident, Type),
-            lines_ident: &Ident,
-        ) -> proc_macro2::TokenStream {
-            let (name, ty) = arg;
-            if is_vec(&ty) {
-                let ty = get_vec_type(&ty).unwrap();
-                if is_vec(ty) {
-                    let ty = get_vec_type(ty).unwrap();
-                    return quote! {
-                        let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
-                    };
-                }
-                return quote! {
-                    let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
-                };
-            }
-            quote! {
-                let #name = #lines_ident.consume::<#ty>().unwrap();
-            }
-        }
-
-        let result = self
-            .args
-            .iter()
-            .map(|arg| arg_to_consume_line_token_stream(arg, &lines_ident));
-
-        quote! {
-            #(#result)*
-        }
+    fn block(&self) -> &syn::Block {
+        &self.body
+    }
+    fn return_type(&self) -> &proc_macro2::TokenStream {
+        &self.return_type
     }
 }
 
@@ -270,7 +290,6 @@ impl PteAttrParser<'_> {
         };
         Ok(result)
     }
-
     fn get_row_attr_value(&self) -> &str {
         if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
             return "";
@@ -290,6 +309,56 @@ impl PteAttrParser<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // どうやってlineの記述をするか
+    // どの記述も最後にlinesを作成してあげると、FunctionSignatureのto_consume_lines_token_streamでlinesをconsumeする記述を作成する
+    // ただし、FunctionSignatureはパースされた結果が格納されている構造体であり、その後にプログラムを記述すること自体も責務としてあるが、これはSRPに反している？
+    // FunctionSginatureを単純にデータの提供する構造体として定義して、さまざまなプログラム生成関数に渡すことでプログラムを作成する方が良い気がしてきた
+    // row = 引数の変数名
+    //
+    //
+    // row = inNUMBER
+    // let mut first_line = String::new();
+    // std::io::stdin().read_line(&mut first_line).unwrap();
+    // let row_num = first_line.split_whitespace().nth(0).unwrap().parse::<usize>().unwrap();
+    // let mut input = String::new();
+    // for _ in 0..row_num {
+    //     std::io::stdin().read_line(&mut input).unwrap();
+    // }
+    // let mut lines = Lines::new(&input);
+    //
+    // row = NUMBER
+    // let mut input = String::new();
+    // for _ in 0..3 {
+    //     std::io::stdin().read_line(&mut input).unwrap();
+    // }
+    //
+    // let mut lines = Lines::new(&input);
+    // つまり、row = の先はどの記述も必要
+    //
+    //
+    //fn consume_line_statement() {
+    //    let attr = quote! { row = n };
+    //    let item = quote! {
+    //        fn solve(n:usize v: Vec<usize>) -> usize {
+    //            0
+    //        }
+    //    };
+    //    let got = consume_line(attr, item);
+    //    let expect = quote! {
+    //        let mut input1 = String::new();
+    //        std::io::stdin().read_line(&mut input1).unwrap();
+    //        let mut lines = Lines::new(&input1);
+    //        let n = lines.consume::<usize>().unwrap();
+    //        let mut input = String::new();
+    //        for _ in 0..n {
+    //            std::io::stdin().read_line(&mut input).unwrap();
+    //        }
+    //        let mut lines = Lines::new(&input);
+    //        let v = lines.consume::<usize>().unwrap();
+    //    };
+    //    assert_eq!(got.to_string(), expect.to_string());
+    //}
     #[test]
     fn pte_test() {
         let attr = quote! { row = in1 };
