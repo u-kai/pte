@@ -269,6 +269,23 @@ impl PteAttrParser<'_> {
         let row_value = self.get_row_attr_value();
         row_value.get(0..2).is_some_and(|s| s == "in")
     }
+    fn exist_row_num(&self) -> bool {
+        self.get_row_num().is_ok()
+    }
+
+    fn exist_row_num_at_var_name(&self) -> bool {
+        if !self.attr.contains(Self::ROW_KEY) {
+            return false;
+        }
+        !(self.exist_row_num_at_input() || self.exist_row_num())
+    }
+    fn get_var_name(&self) -> Result<&str, String> {
+        if !self.exist_row_num_at_var_name() {
+            return Err(format!("row number var name not found in {}", self.attr));
+        }
+        let row_value = self.get_row_attr_value();
+        Ok(row_value)
+    }
     // get by default or row = NUMBER
     fn get_row_num(&self) -> Result<isize, String> {
         if self.attr == "" || !self.attr.contains(Self::ROW_KEY) {
@@ -453,5 +470,13 @@ mod tests {
         assert!(!sut.exist_row_num_at_input());
         let got = sut.get_row_num().unwrap();
         assert_eq!(got, 1);
+    }
+    #[test]
+    fn parse_attr_row_from_var_name() {
+        let attr = "row = n";
+        let sut = PteAttrParser::new(attr);
+        assert!(sut.exist_row_num_at_var_name());
+        let got = sut.get_var_name().unwrap();
+        assert_eq!(got, "n");
     }
 }
