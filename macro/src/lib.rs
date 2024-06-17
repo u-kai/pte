@@ -47,60 +47,59 @@ fn fn_declare(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
     }
 }
 
-fn consume_lines(fn_sig: &FunctionSignature, lines_ident: Ident) -> proc_macro2::TokenStream {
-    fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
-        let Type::Path(path) = ty else {
-            return Err(syn::Error::new(ty.span(), "expected path"));
-        };
-        let Some(segment) = path.path.segments.first() else {
-            return Err(syn::Error::new(ty.span(), "expected segment"));
-        };
-        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-            return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
-        };
-        let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
-            return Err(syn::Error::new(ty.span(), "expected type"));
-        };
-        Ok(ty)
-    }
+fn get_vec_type(ty: &Type) -> syn::Result<&Type> {
+    let Type::Path(path) = ty else {
+        return Err(syn::Error::new(ty.span(), "expected path"));
+    };
+    let Some(segment) = path.path.segments.first() else {
+        return Err(syn::Error::new(ty.span(), "expected segment"));
+    };
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(ty.span(), "expected angle bracketed"));
+    };
+    let syn::GenericArgument::Type(ty) = args.args.first().unwrap() else {
+        return Err(syn::Error::new(ty.span(), "expected type"));
+    };
+    Ok(ty)
+}
 
-    fn is_vec(ty: &Type) -> bool {
-        if let Type::Path(path) = ty {
-            if let Some(segment) = path.path.segments.first() {
-                if segment.ident == "Vec" {
-                    return true;
-                }
+fn is_vec(ty: &Type) -> bool {
+    if let Type::Path(path) = ty {
+        if let Some(segment) = path.path.segments.first() {
+            if segment.ident == "Vec" {
+                return true;
             }
         }
-        false
     }
+    false
+}
 
-    fn arg_to_consume_line_token_stream(
-        arg: &(Ident, Type),
-        lines_ident: &Ident,
-    ) -> proc_macro2::TokenStream {
-        let (name, ty) = arg;
-        if is_vec(&ty) {
-            let ty = get_vec_type(&ty).unwrap();
-            if is_vec(ty) {
-                let ty = get_vec_type(ty).unwrap();
-                return quote! {
-                    let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
-                };
-            }
+fn arg_to_consume_line_token_stream(
+    name: &Ident,
+    ty: &Type,
+    lines_ident: &Ident,
+) -> proc_macro2::TokenStream {
+    if is_vec(ty) {
+        let ty = get_vec_type(ty).unwrap();
+        if is_vec(ty) {
+            let ty = get_vec_type(ty).unwrap();
             return quote! {
-                let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
+                let #name = #lines_ident.consume_to_two_d_vec::<#ty>().unwrap();
             };
         }
-        quote! {
-            let #name = #lines_ident.consume::<#ty>().unwrap();
-        }
+        return quote! {
+            let #name = #lines_ident.consume_to_vec::<#ty>().unwrap();
+        };
     }
-
+    quote! {
+        let #name = #lines_ident.consume::<#ty>().unwrap();
+    }
+}
+fn consume_lines(fn_sig: &FunctionSignature, lines_ident: Ident) -> proc_macro2::TokenStream {
     let result = fn_sig
         .args
         .iter()
-        .map(|arg| arg_to_consume_line_token_stream(arg, &lines_ident));
+        .map(|arg| arg_to_consume_line_token_stream(&arg.0, &arg.1, &lines_ident));
     // |(name,ty)|{
     //    if name == row_ref {
     //       return quote! {
@@ -328,11 +327,77 @@ impl PteAttrParser<'_> {
         1
     }
 }
+fn init_consume_line() -> proc_macro2::TokenStream {
+    quote! {
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        let mut lines = Lines::new(&input);
+    }
+}
+fn consume_lines_from_var_name(
+    fn_sig: &FunctionSignature,
+    var_name: &str,
+) -> proc_macro2::TokenStream {
+    let init_consume_line = init_consume_line();
+    let result = fn_sig
+        .args()
+        .iter()
+        .map(|(name, ty)| {
+            if name.to_string() == var_name {
+                return quote! {
+                   let #name = lines.consume::<usize>().unwrap();
+                   let mut input = String::new();
+                   for _ in 0..#name {
+                       std::io::stdin().read_line(&mut input).unwrap();
+                   }
+                   lines.extend(&input);
+                };
+            }
+            arg_to_consume_line_token_stream(
+                name,
+                ty,
+                &syn::Ident::new("lines", fn_sig.name.span()),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    quote! {
+        #init_consume_line
+
+        #(#result)*
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    fn consume_line_statement_from_var_name() {
+        let expect = quote! {
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
+            let mut lines = Lines::new(&input);
+
+            let v = lines.consume::<usize>().unwrap();
+            let n = lines.consume::<usize>().unwrap();
+            let mut input = String::new();
+
+            for _ in 0..n {
+                std::io::stdin().read_line(&mut input).unwrap();
+            }
+            lines.extend(&input);
+
+            let vec = lines.consume_to_vec::<usize>().unwrap();
+        };
+        let fn_sig = quote! {
+            fn solve(v: usize,n: usize, vec: Vec<usize>) -> usize {
+                0
+            }
+        };
+        let fn_sig = syn::parse2(fn_sig).unwrap();
+        let got = consume_lines_from_var_name(&fn_sig, "n");
+        assert_eq!(got.to_string(), expect.to_string());
+    }
     // どうやってlineの記述をするか
     // どの記述も最後にlinesを作成してあげると、FunctionSignatureのto_consume_lines_token_streamでlinesをconsumeする記述を作成する
     // ただし、FunctionSignatureはパースされた結果が格納されている構造体であり、その後にプログラムを記述すること自体も責務としてあるが、これはSRPに反している？
