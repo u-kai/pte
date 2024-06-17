@@ -25,7 +25,7 @@ pub fn pte(
     pte_impl(attr.into(), item.into()).into()
 }
 
-fn to_execute_token_stream(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
+fn fn_execute(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
     let name = fn_sig.name();
     let args = fn_sig.args();
     let args = args.iter().map(|(name, _)| {
@@ -36,7 +36,7 @@ fn to_execute_token_stream(fn_sig: &FunctionSignature) -> proc_macro2::TokenStre
     }
 }
 
-fn to_declare_token_stream(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
+fn fn_declare(fn_sig: &FunctionSignature) -> proc_macro2::TokenStream {
     let name = fn_sig.name();
     let args = fn_sig.args();
     let args = args.iter().map(|(name, ty)| {
@@ -49,10 +49,7 @@ fn to_declare_token_stream(fn_sig: &FunctionSignature) -> proc_macro2::TokenStre
     }
 }
 
-fn to_consume_lines_token_stream(
-    fn_sig: &FunctionSignature,
-    lines_ident: Ident,
-) -> proc_macro2::TokenStream {
+fn consume_lines(fn_sig: &FunctionSignature, lines_ident: Ident) -> proc_macro2::TokenStream {
     fn arg_to_consume_line_token_stream(
         arg: &(Ident, Type),
         lines_ident: &Ident,
@@ -91,10 +88,9 @@ fn pte_impl(
 ) -> proc_macro2::TokenStream {
     let dependencies = dependencies();
     let fn_sig = fn_parse.parse2(item).unwrap();
-    let consume_lines =
-        to_consume_lines_token_stream(&fn_sig, syn::Ident::new("lines", fn_sig.name.span()));
-    let fn_sig_declare = to_declare_token_stream(&fn_sig);
-    let fn_sig_execute = to_execute_token_stream(&fn_sig);
+    let consume_lines = consume_lines(&fn_sig, syn::Ident::new("lines", fn_sig.name.span()));
+    let fn_sig_declare = fn_declare(&fn_sig);
+    let fn_sig_execute = fn_execute(&fn_sig);
 
     let setup_lines = setup_lines(attr);
     quote! {
