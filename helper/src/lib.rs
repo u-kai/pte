@@ -13,7 +13,7 @@ impl<'a> Line<'a> {
             value: value.split(" "),
         }
     }
-    pub fn next_data(&mut self) -> Option<&str> {
+    pub fn next_data(&mut self) -> Option<&'a str> {
         self.value.next()
     }
     pub fn to_vec<T: FromStr>(self) -> Vec<T> {
@@ -37,19 +37,17 @@ impl<'a> Lines<'a> {
         self.inner.pop_front()
     }
     pub fn next_data(&mut self) -> Option<&str> {
-        if self.is_empty() {
-            return None;
+        if let Some(data) = self.inner.front_mut()?.next_data() {
+            return Some(data);
         }
-        self.inner.get_mut(0).and_then(|line| line.next_data())
+        self.next_line();
+        self.next_data()
     }
     pub fn consume<T: FromStr>(&mut self) -> Option<T> {
         if self.is_empty() {
             return None;
         }
-        self.next_data().and_then(|s| s.parse().ok()).or_else(|| {
-            self.next_line();
-            self.consume()
-        })
+        self.next_data().and_then(|s| s.parse().ok())
     }
     pub fn consume_to_vec<T: FromStr>(&mut self) -> Option<Vec<T>> {
         if self.is_empty() {
