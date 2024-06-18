@@ -37,10 +37,19 @@ impl<'a> Lines<'a> {
         self.inner.pop_front()
     }
     pub fn next_data(&mut self) -> Option<&str> {
+        if self.is_empty() {
+            return None;
+        }
         self.inner.get_mut(0).and_then(|line| line.next_data())
     }
     pub fn consume<T: FromStr>(&mut self) -> Option<T> {
-        self.next_data().and_then(|s| s.parse().ok())
+        if self.is_empty() {
+            return None;
+        }
+        self.next_data().and_then(|s| s.parse().ok()).or_else(|| {
+            self.next_line();
+            self.consume()
+        })
     }
     pub fn consume_to_vec<T: FromStr>(&mut self) -> Option<Vec<T>> {
         if self.is_empty() {
@@ -93,6 +102,21 @@ mod tests {
         assert_eq!(vec.unwrap(), vec![345, 67, 8]);
         let vec = lines.consume_to_two_d_vec::<isize>();
         assert_eq!(vec.unwrap(), vec![vec![9, 10], vec![11, 12]]);
+    }
+    #[test]
+    fn consume_multi_line() {
+        let s = "1\n2 3\ntest";
+        let mut lines = Lines::new(s);
+        let num = lines.consume::<isize>();
+        assert_eq!(num.unwrap(), 1);
+        let num = lines.consume::<isize>();
+        assert_eq!(num.unwrap(), 2);
+        let num = lines.consume::<isize>();
+        assert_eq!(num.unwrap(), 3);
+        let str = lines.consume::<String>();
+        assert_eq!(str.unwrap(), "test");
+        let num = lines.consume::<isize>();
+        assert_eq!(num, None);
     }
     #[test]
     fn consume_line_number() {
