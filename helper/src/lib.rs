@@ -37,16 +37,12 @@ impl<'a> Lines<'a> {
         self.inner.pop_front()
     }
     pub fn next_data(&mut self) -> Option<&str> {
-        if let Some(data) = self.inner.front_mut()?.next_data() {
-            return Some(data);
-        }
-        self.next_line();
-        self.next_data()
+        self.inner.front_mut()?.next_data().or_else(|| {
+            self.next_line();
+            self.next_data()
+        })
     }
     pub fn consume<T: FromStr>(&mut self) -> Option<T> {
-        if self.is_empty() {
-            return None;
-        }
         self.next_data().and_then(|s| s.parse().ok())
     }
     pub fn consume_to_vec<T: FromStr>(&mut self) -> Option<Vec<T>> {

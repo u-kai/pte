@@ -83,6 +83,26 @@ fn solve(v:Vec<Vec<char>>) -> i32 {
 - You couldn't specify the number of columns, because the number of columns is automatically detected.
 - If you didn't specify the number of rows, default is 1.
 
+- If you want to specify the number of input rows from input variable, you can write the code like this:
+
+```rust
+use pte::pte;
+#[pte(row = n)]
+fn solve(w:usize,n:usize,v:Vec<Vec<char>>) -> i32 {
+   v.len() as i32
+}
+```
+
+- n is function argument and the number of rows is specified by n.
+- For example, input is below, first line is `3 2`, 3 is `w`, 2 is `n`. So, w,n mapped to `w` and `n` and `v` is mapped to 2 rows.
+
+```shell
+cargo run
+3 2
+a b c # read and mapped to v
+d e f # read and mapped to v
+```
+
 ## OLD Ver
 
 - Below code is the full code to submit to Atcoder.
